@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generos Musicales de América Latina</title>
+    <!-- Tailwind CSS para Estilos Rápidos y Modernos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js para Visualización de Datos y Redes -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; overflow: hidden; }
+        .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid #e2e8f0; }
+        
+        /* Tooltip Personalizado */
+        #tooltip {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.85rem;
+            z-index: 50;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        /* SVG Elementos interactivos */
+        .node circle { stroke: #fff; stroke-width: 1.5px; transition: stroke-width 0.2s; cursor: pointer; }
+        .node circle:hover { stroke-width: 3px; stroke: #333; }
+        .link { opacity: 0.6; transition: opacity 0.2s; }
+        .link:hover { opacity: 1; }
+        
+        /* Pestañas */
+        .tab-btn { transition: all 0.3s ease; }
+        .tab-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5); }
+        
+        /* Contenedor Principal Ajustable */
+        #main-container { height: calc(100vh - 4rem); }
+        #canvas-container { height: 100%; width: 100%; position: relative; overflow: hidden; background: #f1f5f9; border-radius: 0.75rem;}
+        
+        /* Scroll personalizado */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <!-- Encabezado -->
+    <header class="bg-white shadow-sm h-16 flex items-center justify-between px-6 z-10 shrink-0">
+        <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+            Géneros Musicales de América Latina
+        </h1>
+        <div id="tabs" class="flex space-x-2 hidden">
+            <button class="tab-btn active px-4 py-1.5 rounded-full border border-slate-300 font-medium text-sm" data-mode="red">Red</button>
+            <button class="tab-btn px-4 py-1.5 rounded-full border border-slate-300 font-medium text-sm" data-mode="radial">Radial</button>
+            <button class="tab-btn px-4 py-1.5 rounded-full border border-slate-300 font-medium text-sm" data-mode="concentrico">Concéntrico</button>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <div id="main-container" class="flex flex-1 p-4 gap-4">
+        
+        <!-- Panel Izquierdo: Controles y Leyenda -->
+        <div class="w-80 glass-panel rounded-xl shadow-lg flex flex-col h-full overflow-hidden">
+            
+            <div class="p-5 border-b border-slate-200 bg-white">
+                <h2 class="text-lg font-bold mb-3 text-slate-700">Carga de Datos</h2>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Archivo de Nodos (CSV)</label>
+                        <input type="file" id="upload-nodes" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Archivo de Conexiones (CSV)</label>
+                        <input type="file" id="upload-links" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"/>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex items-center justify-between">
+                    <label class="flex items-center space-x-2 text-sm text-slate-700 cursor-pointer">
+                        <input type="checkbox" id="show-isolated" class="rounded text-blue-600 focus:ring-blue-500" disabled>
+                        <span>Mostrar nodos aislados</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Panel de Avisos (Se muestra si hay errores/mensajes) -->
+            <div id="alerts-panel" class="p-4 bg-yellow-50 border-b border-yellow-200 overflow-y-auto max-h-48 text-sm hidden">
+                <h3 class="font-bold text-yellow-800 mb-2 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    Avisos de Validación
+                </h3>
+                <ul id="alerts-list" class="list-disc pl-4 text-yellow-700 space-y-1 text-xs"></ul>
+            </div>
+
+            <!-- Leyenda y Filtros -->
+            <div id="legend-panel" class="p-5 flex-1 overflow-y-auto hidden">
+                <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1 border-slate-200">Leyenda (Categorías)</h3>
+                <div id="legend-content" class="space-y-2 mb-4"></div>
+                
+                <div id="links-legend-container" class="hidden">
+                    <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1 border-slate-200">Tipos de Conexión</h3>
+                    <div id="links-legend-content" class="space-y-2 text-xs text-slate-600"></div>
+                </div>
+            </div>
+            
+            <!-- Mensaje Inicial de Espera -->
+            <div id="initial-msg" class="p-6 text-center text-slate-400 flex-1 flex flex-col justify-center items-center">
+                <svg class="w-12 h-12 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                <p>Por favor, carga los dos archivos (Nodos y Conexiones) para visualizar la red.</p>
+            </div>
+        </div>
+
+        <!-- Área del Canvas -->
+        <div class="flex-1 rounded-xl shadow-lg relative border border-slate-200 bg-white" id="canvas-container">
+            <svg id="network-svg" class="w-full h-full"></svg>
+            <div id="empty-state" class="absolute inset-0 flex items-center justify-center text-slate-400 pointer-events-none">
+                Esperando datos...
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+    <script>
+        /**
+         * ESTADO DE LA APLICACIÓN
+         */
+        const state = {
+            rawNodesText: null,
+            rawLinksText: null,
+            nodesHeader: [],
+            linksHeader: [],
+            nodesData: [],
+            linksData: [],
+            validNodes: [],
+            validLinks: [],
+            missingNodes: new Set(),
+            missingLinkCount: 0,
+            missingLinkSources: new Set(),
+            isolatedCount: 0,
+            showIsolated: false,
+            currentMode: 'red', // red | radial | concentrico
+            colorScale: d3.scaleOrdinal(d3.schemeCategory10),
+            linkTypes: [],
+            simulation: null
+        };
+
+        // Elementos DOM
+        const elUploadNodes = document.getElementById('upload-nodes');
+        const elUploadLinks = document.getElementById('upload-links');
+        const elShowIsolated = document.getElementById('show-isolated');
+        const elAlertsPanel = document.getElementById('alerts-panel');
+        const elAlertsList = document.getElementById('alerts-list');
+        const elLegendPanel = document.getElementById('legend-panel');
+        const elLegendContent = document.getElementById('legend-content');
+        const elLinksLegendContainer = document.getElementById('links-legend-container');
+        const elLinksLegendContent = document.getElementById('links-legend-content');
+        const elInitialMsg = document.getElementById('initial-msg');
+        const elEmptyState = document.getElementById('empty-state');
+        const elTabs = document.getElementById('tabs');
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const svg = d3.select("#network-svg");
+        const tooltip = d3.select("#tooltip");
+
+        // Grupo principal para el SVG (para zoom y pan)
+        const containerGroup = svg.append("g").attr("class", "container-group");
+        
+        // Configurar Zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                containerGroup.attr("transform", event.transform);
+            });
+        svg.call(zoom);
+
+        // Definir marcadores de flechas para direccionalidad
+        const defs = svg.append("defs");
+        
+        // Flecha al final (Origen -> Destino)
+        defs.append("marker")
+            .attr("id", "arrow-end")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 18) // Ajuste para el radio del nodo
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", "#94a3b8");
+
+        // Flecha al inicio (Destino -> Origen)
+        defs.append("marker")
+            .attr("id", "arrow-start")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", -8)
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M10,-5L0,0L10,5")
+            .attr("fill", "#94a3b8");
+
+        /**
+         * UTILIDADES
+         */
+        
+        // Adivinar delimitador (coma o punto y coma)
+        function guessDelimiter(text) {
+            const firstLine = text.split('\n')[0] || '';
+            const commas = (firstLine.match(/,/g) || []).length;
+            const semicolons = (firstLine.match(/;/g) || []).length;
+            return semicolons > commas ? ';' : ',';
+        }
+
+        // Leer archivo a texto
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = e => reject(e);
+                reader.readAsText(file, "UTF-8");
+            });
+        }
+
+        /**
+         * MANEJO DE EVENTOS
+         */
+        elUploadNodes.addEventListener('change', async (e) => {
+            if (!e.target.files.length) return;
+            state.rawNodesText = await readFileAsText(e.target.files[0]);
+            checkAndProcessData();
+        });
+
+        elUploadLinks.addEventListener('change', async (e) => {
+            if (!e.target.files.length) return;
+            state.rawLinksText = await readFileAsText(e.target.files[0]);
+            checkAndProcessData();
+        });
+
+        elShowIsolated.addEventListener('change', (e) => {
+            state.showIsolated = e.target.checked;
+            renderVisualization();
+        });
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                // Actualizar UI
+                tabBtns.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                // Actualizar Estado
+                state.currentMode = e.target.dataset.mode;
+                
+                // Re-renderizar
+                renderVisualization();
+            });
+        });
+
+        /**
+         * PROCESAMIENTO DE DATOS
+         */
+        function checkAndProcessData() {
+            if (state.rawNodesText && state.rawLinksText) {
+                elInitialMsg.classList.add('hidden');
+                elEmptyState.classList.add('hidden');
+                elLegendPanel.classList.remove('hidden');
+                elTabs.classList.remove('hidden');
+                elShowIsolated.disabled = false;
+                
+                parseData();
+                updateUI();
+                renderVisualization();
+            }
+        }
+
+        function parseData() {
+            // Limpiar estado
+            state.missingNodes.clear();
+            state.missingLinkSources.clear();
+            state.missingLinkCount = 0;
+            state.isolatedCount = 0;
+            
+            // 1. Parsear Nodos (Points)
+            const delimNodes = guessDelimiter(state.rawNodesText);
+            const parsedNodesRows = d3.dsvFormat(delimNodes).parseRows(state.rawNodesText.trim());
+            state.nodesHeader = parsedNodesRows[0] || ["ID", "Categoría", "Peso"];
+            
+            const rawNodes = [];
+            for (let i = 1; i < parsedNodesRows.length; i++) {
+                const row = parsedNodesRows[i];
+                if (row.length === 0 || !row[0]) continue;
+                rawNodes.push({
+                    id: row[0] ? row[0].trim() : null,
+                    category: row[1] ? row[1].trim() : 'Sin Categoría',
+                    weight: (row.length > 2 && row[2]) ? parseFloat(row[2]) : 1,
+                    originalRow: row // Guardamos para tooltip dinámico
+                });
+            }
+
+            const nodesMap = new Map();
+            rawNodes.forEach(n => { if (n.id) nodesMap.set(n.id, n); });
+
+            // 2. Parsear Conexiones (Links)
+            const delimLinks = guessDelimiter(state.rawLinksText);
+            const parsedLinksRows = d3.dsvFormat(delimLinks).parseRows(state.rawLinksText.trim());
+            state.linksHeader = parsedLinksRows[0] || ["Origen", "Destino", "Peso", "Tipo", "Sentido"];
+            
+            const rawLinks = [];
+            const linkTypesSet = new Set();
+            
+            for (let i = 1; i < parsedLinksRows.length; i++) {
+                const row = parsedLinksRows[i];
+                if (row.length < 2) continue;
+                
+                const source = row[0] ? row[0].trim() : '';
+                const target = row[1] ? row[1].trim() : '';
+                
+                if (!source || !target) {
+                    state.missingLinkCount++;
+                    if (source) state.missingLinkSources.add(source);
+                    continue;
+                }
+
+                // Check existencia
+                if (!nodesMap.has(source)) state.missingNodes.add(source);
+                if (!nodesMap.has(target)) state.missingNodes.add(target);
+
+                const type = (row.length > 3 && row[3]) ? row[3].trim() : 'Predeterminado';
+                linkTypesSet.add(type);
+
+                rawLinks.push({
+                    source: source,
+                    target: target,
+                    weight: (row.length > 2 && row[2]) ? parseFloat(row[2]) : 1,
+                    type: type,
+                    direction: (row.length > 4 && row[4]) ? row[4].trim() : "Origen → Destino",
+                    originalRow: row
+                });
+            }
+
+            // Convertir tipos de link a array para asignar estilos (continuo/punteado)
+            state.linkTypes = Array.from(linkTypesSet);
+
+            // Filtrar links válidos (ambos nodos existen en points)
+            state.validLinks = rawLinks.filter(l => nodesMap.has(l.source) && nodesMap.has(l.target));
+
+            // Calcular grados (conexiones por nodo)
+            const nodeDegrees = {};
+            state.validLinks.forEach(l => {
+                nodeDegrees[l.source] = (nodeDegrees[l.source] || 0) + 1;
+                nodeDegrees[l.target] = (nodeDegrees[l.target] || 0) + 1;
+            });
+
+            // Etiquetar nodos aislados y filtrar
+            state.validNodes = rawNodes.map(n => {
+                const isIsolated = !(nodeDegrees[n.id] > 0);
+                if (isIsolated) state.isolatedCount++;
+                return {
+                    ...n,
+                    isIsolated: isIsolated,
+                    degree: nodeDegrees[n.id] || 0
+                };
+            });
+        }
+
+        function updateUI() {
+            // Actualizar Avisos
+            elAlertsList.innerHTML = '';
+            let hasAlerts = false;
+
+            if (state.missingLinkCount > 0) {
+                hasAlerts = true;
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${state.missingLinkCount}</strong> filas de conexión omitidas por Origen/Destino vacío. Orígenes detectados: ${Array.from(state.missingLinkSources).slice(0, 3).join(', ')}${state.missingLinkSources.size > 3 ? '...' : ''}`;
+                elAlertsList.appendChild(li);
+            }
+
+            if (state.missingNodes.size > 0) {
+                hasAlerts = true;
+                const li = document.createElement('li');
+                const list = Array.from(state.missingNodes).slice(0, 5).join(', ');
+                li.innerHTML = `<strong>${state.missingNodes.size}</strong> nombres en Conexiones no existen en Nodos: ${list}${state.missingNodes.size > 5 ? '...' : ''}`;
+                elAlertsList.appendChild(li);
+            }
+
+            if (state.isolatedCount > 0) {
+                hasAlerts = true;
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${state.isolatedCount}</strong> nodos no tienen conexiones (aislados).`;
+                elAlertsList.appendChild(li);
+            }
+
+            if (hasAlerts) {
+                elAlertsPanel.classList.remove('hidden');
+            } else {
+                elAlertsPanel.classList.add('hidden');
+            }
+
+            // Actualizar Leyenda de Categorías
+            const categories = Array.from(new Set(state.validNodes.map(n => n.category)));
+            elLegendContent.innerHTML = '';
+            categories.forEach(cat => {
+                const color = state.colorScale(cat);
+                elLegendContent.innerHTML += `
+                    <div class="flex items-center text-xs text-slate-600">
+                        <span class="w-3 h-3 rounded-full mr-2 shadow-sm" style="background-color: ${color};"></span>
+                        ${cat}
+                    </div>
+                `;
+            });
+
+            // Actualizar Leyenda de Líneas si hay tipos
+            if (state.linkTypes.length > 1) {
+                elLinksLegendContainer.classList.remove('hidden');
+                elLinksLegendContent.innerHTML = '';
+                
+                const type1 = state.linkTypes[0];
+                const type2 = state.linkTypes[1]; // Suponemos máximo 2 por las instrucciones
+                
+                elLinksLegendContent.innerHTML += `
+                    <div class="flex items-center mb-1">
+                        <svg class="w-6 h-1 mr-2"><line x1="0" y1="0" x2="24" y2="0" stroke="#94a3b8" stroke-width="2"></line></svg>
+                        ${type1}
+                    </div>
+                `;
+                if(type2) {
+                    elLinksLegendContent.innerHTML += `
+                        <div class="flex items-center">
+                            <svg class="w-6 h-1 mr-2"><line x1="0" y1="0" x2="24" y2="0" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4"></line></svg>
+                            ${type2}
+                        </div>
+                    `;
+                }
+            } else {
+                elLinksLegendContainer.classList.add('hidden');
+            }
+        }
+
+        /**
+         * RENDERIZADO PRINCIPAL
+         */
+        function renderVisualization() {
+            if (state.simulation) {
+                state.simulation.stop();
+            }
+
+            const containerRect = document.getElementById('canvas-container').getBoundingClientRect();
+            const width = containerRect.width;
+            const height = containerRect.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+
+            // Filtrar nodos por aislamiento
+            let renderNodes = state.validNodes;
+            if (!state.showIsolated) {
+                renderNodes = state.validNodes.filter(n => !n.isIsolated);
+            }
+
+            // Clonar datos para D3 force (D3 muta los objetos)
+            const d3Nodes = renderNodes.map(d => Object.create(d));
+            const nodeIds = new Set(d3Nodes.map(d => d.id));
+            
+            // Solo usar links donde ambos nodos existan en los nodos renderizados
+            const d3Links = state.validLinks
+                .filter(l => nodeIds.has(l.source) && nodeIds.has(l.target))
+                .map(d => Object.create(d));
+
+            // Escalas base
+            const weightValues = renderNodes.map(n => n.weight);
+            const minWeight = Math.min(...weightValues) || 1;
+            const maxWeight = Math.max(...weightValues) || 1;
+            const sizeScale = d3.scaleSqrt().domain([minWeight, maxWeight]).range([5, 15]);
+
+            const linkWeightValues = d3Links.map(l => l.weight);
+            const minLWeight = Math.min(...linkWeightValues) || 1;
+            const maxLWeight = Math.max(...linkWeightValues) || 1;
+            const strokeScale = d3.scaleLinear().domain([minLWeight, maxLWeight]).range([1, 5]);
+
+            // Limpiar SVG previo
+            containerGroup.selectAll("*").remove();
+
+            // Dibujar Links
+            const linkElements = containerGroup.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(d3Links)
+                .enter().append("line")
+                .attr("class", "link")
+                .attr("stroke", "#94a3b8")
+                .attr("stroke-width", d => strokeScale(d.weight))
+                .attr("stroke-dasharray", d => {
+                    // Tipo 1: continuo, Tipo 2: punteado
+                    if (state.linkTypes.length > 1 && d.type === state.linkTypes[1]) {
+                        return "5,5";
+                    }
+                    return null;
+                })
+                .attr("marker-end", d => {
+                    const dir = d.direction.toLowerCase();
+                    if (dir.includes("origen") && dir.includes("destino") && !dir.includes("ambos") && !dir.includes("destin") && dir.indexOf("origen") < dir.indexOf("destino")) {
+                        return "url(#arrow-end)";
+                    }
+                    if (dir.includes("ambos")) return "url(#arrow-end)";
+                    return null;
+                })
+                .attr("marker-start", d => {
+                    const dir = d.direction.toLowerCase();
+                    if (dir.includes("destino") && dir.includes("origen") && dir.indexOf("destino") < dir.indexOf("origen")) {
+                        return "url(#arrow-start)";
+                    }
+                    if (dir.includes("ambos")) return "url(#arrow-start)";
+                    return null;
+                })
+                .on("mouseover", (event, d) => showLinkTooltip(event, d))
+                .on("mouseout", hideTooltip);
+
+            // Dibujar Nodos
+            const nodeElements = containerGroup.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(d3Nodes)
+                .enter().append("g")
+                .attr("class", "node")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended))
+                .on("mouseover", (event, d) => showNodeTooltip(event, d))
+                .on("mouseout", hideTooltip);
+
+            nodeElements.append("circle")
+                .attr("r", d => sizeScale(d.weight))
+                .attr("fill", d => state.colorScale(d.category));
+
+            nodeElements.append("text")
+                .text(d => d.id)
+                .attr("x", d => sizeScale(d.weight) + 2)
+                .attr("y", 3)
+                .attr("font-size", "10px")
+                .attr("fill", "#334155")
+                .style("text-shadow", "0px 0px 3px rgba(255,255,255,1), 0px 0px 3px rgba(255,255,255,1)");
+
+
+            /**
+             * LÓGICA DE LAYOUTS (MODOS)
+             */
+            if (state.currentMode === 'red') {
+                // MODO RED (Fuerzas)
+                state.simulation = d3.forceSimulation(d3Nodes)
+                    .force("link", d3.forceLink(d3Links).id(d => d.id).distance(80))
+                    .force("charge", d3.forceManyBody().strength(-300))
+                    .force("center", d3.forceCenter(centerX, centerY))
+                    .force("collide", d3.forceCollide().radius(d => sizeScale(d.weight) + 15).iterations(2))
+                    .on("tick", () => {
+                        linkElements
+                            .attr("x1", d => d.source.x)
+                            .attr("y1", d => d.source.y)
+                            .attr("x2", d => d.target.x)
+                            .attr("y2", d => d.target.y);
+
+                        nodeElements
+                            .attr("transform", d => `translate(${d.x},${d.y})`);
+                    });
+
+            } else if (state.currentMode === 'radial') {
+                // MODO RADIAL
+                const radius = Math.min(width, height) / 2 - 80;
+                
+                // Ordenar por categoría para que queden agrupados
+                d3Nodes.sort((a, b) => a.category.localeCompare(b.category));
+                
+                d3Nodes.forEach((d, i) => {
+                    const angle = (i / d3Nodes.length) * 2 * Math.PI;
+                    d.fx = centerX + radius * Math.cos(angle);
+                    d.fy = centerY + radius * Math.sin(angle);
+                });
+
+                // Resolver referencias de links
+                const nodeById = new Map(d3Nodes.map(d => [d.id, d]));
+                d3Links.forEach(l => {
+                    l.source = nodeById.get(l.source);
+                    l.target = nodeById.get(l.target);
+                });
+
+                linkElements
+                    .attr("x1", d => d.source.fx)
+                    .attr("y1", d => d.source.fy)
+                    .attr("x2", d => d.target.fx)
+                    .attr("y2", d => d.target.fy);
+
+                nodeElements.attr("transform", d => `translate(${d.fx},${d.fy})`);
+                
+                // Animar aparición suave
+                containerGroup.style("opacity", 0).transition().duration(500).style("opacity", 1);
+
+            } else if (state.currentMode === 'concentrico') {
+                // MODO CONCÉNTRICO (por Peso / Grado)
+                // Ordenar por peso (o grado si peso es igual) descendente
+                const sortedNodes = [...d3Nodes].sort((a, b) => {
+                    if (b.weight !== a.weight) return b.weight - a.weight;
+                    return b.degree - a.degree;
+                });
+
+                // Asignar anillos
+                const ringsCount = 4;
+                const maxRadius = Math.min(width, height) / 2 - 40;
+                const ringStep = maxRadius / ringsCount;
+
+                // Dibujar anillos visuales al fondo
+                const bgRings = containerGroup.insert("g", ".links").attr("class", "bg-rings");
+                for(let r=1; r<=ringsCount; r++){
+                    bgRings.append("circle")
+                        .attr("cx", centerX)
+                        .attr("cy", centerY)
+                        .attr("r", r * ringStep)
+                        .attr("fill", "none")
+                        .attr("stroke", "#e2e8f0")
+                        .attr("stroke-dasharray", "4,4");
+                }
+
+                // Agrupar en anillos
+                const nodesPerRing = Math.ceil(sortedNodes.length / ringsCount);
+                
+                sortedNodes.forEach((d, i) => {
+                    const ringIndex = Math.floor(i / nodesPerRing);
+                    // Rango 0 = centro, Rango ringsCount-1 = exterior
+                    const ringRadius = (ringIndex === 0 && d3Nodes.length < 5) ? 0 : (ringIndex + 0.5) * ringStep; 
+                    
+                    const nodesInThisRing = Math.min(nodesPerRing, sortedNodes.length - ringIndex*nodesPerRing);
+                    const idxInRing = i % nodesPerRing;
+                    
+                    // Si está en el centro centro, posición fija
+                    if (ringRadius === 0) {
+                        d.fx = centerX;
+                        d.fy = centerY;
+                    } else {
+                        const angle = (idxInRing / nodesInThisRing) * 2 * Math.PI;
+                        d.fx = centerX + ringRadius * Math.cos(angle);
+                        d.fy = centerY + ringRadius * Math.sin(angle);
+                    }
+                });
+
+                // Resolver referencias de links
+                const nodeById = new Map(d3Nodes.map(d => [d.id, d]));
+                d3Links.forEach(l => {
+                    l.source = nodeById.get(l.source);
+                    l.target = nodeById.get(l.target);
+                });
+
+                linkElements
+                    .attr("x1", d => d.source.fx)
+                    .attr("y1", d => d.source.fy)
+                    .attr("x2", d => d.target.fx)
+                    .attr("y2", d => d.target.fy);
+
+                nodeElements.attr("transform", d => `translate(${d.fx},${d.fy})`);
+                
+                // Transición
+                containerGroup.style("opacity", 0).transition().duration(500).style("opacity", 1);
+            }
+
+
+            // Funciones de Drag para el modo 'red'
+            function dragstarted(event, d) {
+                if (state.currentMode !== 'red') return;
+                if (!event.active) state.simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                if (state.currentMode !== 'red') return;
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (state.currentMode !== 'red') return;
+                if (!event.active) state.simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        /**
+         * TOOLTIPS DINÁMICOS (Leyendo cabeceras originales)
+         */
+        function showNodeTooltip(event, d) {
+            let html = `<div class="font-bold border-b border-gray-600 pb-1 mb-1 text-blue-300">${d.id}</div>`;
+            
+            // Leer desde la fila original usando los headers detectados
+            state.nodesHeader.forEach((colName, index) => {
+                if (index === 0) return; // Ya mostramos el ID en el título
+                const val = d.originalRow[index];
+                if (val !== undefined && val !== "") {
+                    html += `<div><span class="text-gray-400">${colName}:</span> ${val}</div>`;
+                }
+            });
+            html += `<div class="mt-1 pt-1 border-t border-gray-600"><span class="text-gray-400">Conexiones:</span> ${d.degree}</div>`;
+
+            tooltip.html(html)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px")
+                .style("opacity", 1);
+        }
+
+        function showLinkTooltip(event, d) {
+            const originalSourceStr = typeof d.source === 'object' ? d.source.id : d.source;
+            const originalTargetStr = typeof d.target === 'object' ? d.target.id : d.target;
+            
+            let html = `<div class="font-bold border-b border-gray-600 pb-1 mb-1 text-green-300">Conexión</div>`;
+            html += `<div><span class="text-gray-400">Origen:</span> ${originalSourceStr}</div>`;
+            html += `<div><span class="text-gray-400">Destino:</span> ${originalTargetStr}</div>`;
+            
+            // Propiedades opcionales
+            for(let i=2; i < state.linksHeader.length; i++) {
+                const colName = state.linksHeader[i];
+                const val = d.originalRow[i];
+                if (val !== undefined && val !== "") {
+                    html += `<div><span class="text-gray-400">${colName}:</span> ${val}</div>`;
+                }
+            }
+
+            tooltip.html(html)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px")
+                .style("opacity", 1);
+        }
+
+        function hideTooltip() {
+            tooltip.style("opacity", 0);
+        }
+
+        // Manejar Resize Responsivo
+        window.addEventListener('resize', () => {
+            if (state.validNodes.length > 0) {
+                renderVisualization();
+            }
+        });
+
+    </script>
+</body>
+</html>
